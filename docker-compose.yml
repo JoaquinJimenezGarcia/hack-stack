@@ -1,0 +1,48 @@
+# On-demand lab. Nothing starts until ./stack up.
+# Kali is a CLI workstation. juice-shop is an optional local practice site.
+
+services:
+  kali:
+    build:
+      context: ./kali
+      dockerfile: Dockerfile
+      args:
+        TOOLSET: ${TOOLSET:-starter}
+    image: hack-stack-kali:${TOOLSET:-starter}
+    container_name: hack-stack-kali
+    hostname: kali
+    stdin_open: true
+    tty: true
+    init: true
+    restart: "no"
+    command: ["sleep", "infinity"]
+    working_dir: /work
+    stop_grace_period: 5s
+    # Raw sockets for tools such as nmap and tcpdump. Not privileged, not host networking.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    mem_limit: ${KALI_MEM_LIMIT:-2g}
+    cpus: ${KALI_CPUS:-2}
+    volumes:
+      - ./work:/work
+    networks:
+      - lab
+
+  juice-shop:
+    profiles: ["lab"]
+    image: bkimminich/juice-shop:v20.4.0
+    container_name: hack-stack-juice
+    hostname: juice-shop
+    restart: "no"
+    init: true
+    mem_limit: ${JUICE_MEM_LIMIT:-512m}
+    ports:
+      - "127.0.0.1:${JUICE_PORT:-3080}:3000"
+    networks:
+      - lab
+
+networks:
+  lab:
+    name: hack-stack
+    driver: bridge

@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# Start, stop, and enter the on-demand Kali lab.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+TOOLSET="${TOOLSET:-starter}"
+JUICE_PORT="${JUICE_PORT:-3080}"
+
+usage() {
+  cat <<'EOF'
+Usage: ./stack <command>
+
+  up            Build Kali if needed and start it
+  up lab        Also start the local practice site (Juice Shop)
+  down          Stop containers and release CPU and memory
+  shell         Open a shell in Kali (starts Kali first)
+  status        Show what is running and current CPU and memory use
+  tools         Show the tool set configured in .env
+  logs          Follow container logs
+  rebuild       Pull a fresh base image, rebuild Kali, and start it
+  purge --yes   Remove containers. Keeps ./work and downloaded images
+  purge --yes --images
+                Also delete the images this project downloaded
+
+Stopped containers use no CPU or RAM. The image stays on disk so the next
+start is quick. Files in ./work are kept across stop, purge, and rebuild.
+EOF
+}
+
+need_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is not installed. Install Docker Engine and the Compose plugin:"
+    echo "  https://docs.docker.com/engine/install/"
+    exit 1
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "The Docker Compose plugin is missing. Install the docker-compose-plugin package."
+    exit 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "Cannot talk to the Docker daemon. Start Docker, or add your user to the docker group and log in again:"
+    echo "  sudo usermod -aG docker \"$USER\""
+    exit 1
+  fi
+}
+
+compose() {
+  docker compose --profile lab "$@"
+}
+
+print_lab_hint() {
+  local with_lab="${1:-}"
+  echo "Kali is running. Open a shell with: ./stack shell"
+  echo "Course files: ./work  ->  /work inside Kali"
+  if [[ "$with_lab" == "lab" ]]; then
+    echo "Practice site on this machine: http://127.0.0.1:${JUICE_PORT}"
+    echo "Same site from inside Kali:    http://juice-shop:3000"
+  else
+    echo "Local practice site is off. Start it with: ./stack up lab"
+  fi
+}
+
+cmd_up() {
+  local target="${1:-}"
+  case "$target" in
+    ""|kali)
+      docker compose up -d kali
+      print_lab_hint
+      ;;
+    lab)
+      compose up -d
+      print_lab_hint lab
+      ;;
+    *)
+      echo "Unknown target: $target"
+      echo "Use: ./stack up    or    ./stack up lab"
+      exit 1
+      ;;
+  esac
+}
+
+cmd_down() {
+  compose stop
+  echo "Stopped. CPU and memory are released. Images and ./work are still on disk."
+  echo "Start again with: ./stack up"
+}
+
+cmd_shell() {
+  docker compose up -d kali
+  echo "Entering Kali. Leave with: exit"
+  docker compose exec kali bash
+}
+
+cmd_status() {
+  compose ps -a
+  echo
+  local ids
+  ids="$(compose ps -q --status running || true)"
+  if [[ -n "$ids" ]]; then
+    # shellcheck disable=SC2086
+    docker stats --no-stream $ids
+  else
+    echo "Nothing is running. RAM and CPU from this stack are free."
+  fi
+}
+
+cmd_tools() {
+  echo "TOOLSET=${TOOLSET}"
+  echo
+  if [[ "$TOOLSET" == "starter" ]]; then
+    echo "Packages installed into the Kali image:"
+    grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$ROOT/kali/packages.starter"
+  else
+    echo "Kali metapackage installed into the image: ${TOOLSET}"
+    echo "Change TOOLSET in .env and run ./stack rebuild to switch."
+  fi
+}
+
+cmd_logs() {
+  compose logs -f --tail 80
+}
+
+cmd_rebuild() {
+  docker compose build --pull kali
+  docker compose up -d kali
+  print_lab_hint
+}
+
+cmd_purge() {
+  if [[ "${1:-}" != "--yes" ]]; then
+    echo "This removes the containers. Extra packages installed with apt inside Kali are lost."
+    echo "Files in ./work are kept. Downloaded images are kept unless you pass --images."
+    echo "Re-run with: ./stack purge --yes"
+    exit 1
+  fi
+  if [[ "${2:-}" == "--images" ]]; then
+    compose down --rmi all --remove-orphans
+    echo "Containers and project images removed. ./work was kept."
+  else
+    compose down --remove-orphans
+    echo "Containers removed. Images and ./work were kept."
+  fi
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    -h|--help|help|"")
+      usage
+      [[ -z "$cmd" ]] && exit 1
+      ;;
+    up|down|shell|status|logs|rebuild|purge)
+      need_docker
+      ;;
+    tools)
+      ;;
+    *)
+      echo "Unknown command: $cmd"
+      echo
+      usage
+      exit 1
+      ;;
+  esac
+
+  case "$cmd" in
+    up) shift; cmd_up "${1:-}" ;;
+    down) cmd_down ;;
+    shell) cmd_shell ;;
+    status) cmd_status ;;
+    tools) cmd_tools ;;
+    logs) cmd_logs ;;
+    rebuild) cmd_rebuild ;;
+    purge) shift; cmd_purge "${1:-}" "${2:-}" ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,48 @@
+# Everyday shell and file tools
+ca-certificates
+curl
+wget
+git
+vim
+nano
+less
+tmux
+file
+jq
+unzip
+procps
+locales
+
+# Network basics
+iproute2
+iputils-ping
+net-tools
+dnsutils
+whois
+traceroute
+openssh-client
+netcat-traditional
+tcpdump
+
+# Scripting
+python3
+python3-pip
+python3-venv
+
+# Course toolkit (CLI). Metapackages such as kali-linux-headless stay opt-in.
+nmap
+sqlmap
+nikto
+gobuster
+ffuf
+dirb
+hydra
+john
+wordlists
+smbclient
+enum4linux
+responder
+impacket-scripts
+nbtscan
+sslscan
+whatweb
